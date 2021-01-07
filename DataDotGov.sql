@@ -1,3 +1,113 @@
+IF NOT EXISTS (SELECT * FROM sys.configurations WHERE name ='Ole Automation Procedures' AND value=1)
+  	BEGIN
+     EXECUTE sp_configure 'Ole Automation Procedures', 1;
+     RECONFIGURE;  
+	 EXECUTE sp_configure 'show advanced options', 1;  
+	 RECONFIGURE;  
+     end 
+  SET ANSI_NULLS ON;
+  SET QUOTED_IDENTIFIER ON;
+  GO
+  IF Object_Id('dbo.get_http','P') IS NOT NULL 
+  	drop procedure dbo.get_http
+	go 
+   create procedure get_http @url varchar(2000),
+						@output text output
+as
+begin
+/*
+exec get_http 'https://www.bing.com', 
+*/
+
+    declare @hr int;
+    declare @win int;
+    declare @errorMessage varchar(2000);
+	 
+
+    begin try
+
+      EXEC @hr=sp_OACreate 'WinHttp.WinHttpRequest.5.1',@win OUT 
+      IF @hr <> 0
+      begin;
+        set @errorMessage = concat('sp_OACreate failed ', convert(varchar(20),cast(@hr as varbinary(4)),1));
+        throw 60000, @errorMessage, 1;
+      end;
+
+      EXEC @hr=sp_OAMethod @win, 'Open',NULL,'GET',@url,'false'
+      IF @hr <> 0
+      begin;
+        set @errorMessage = concat('Open failed ', convert(varchar(20),cast(@hr as varbinary(4)),1));
+        throw 60000, @errorMessage, 1;
+      end;
+
+      --Option is an indexed property, so newvalue = 2048 and index = 9
+      --sp_OASetProperty objecttoken , propertyname , newvalue [ , index... ] 
+      EXEC @hr=sp_OASetProperty @win, 'Option', 2048, 9
+      IF @hr <> 0
+      begin;
+        set @errorMessage = concat('set Option failed ', convert(varchar(20),cast(@hr as varbinary(4)),1) );
+        throw 60000, @errorMessage, 1;
+      end;
+
+      EXEC @hr=sp_OAMethod @win,'Send'
+      IF @hr <> 0
+      begin;
+        set @errorMessage = concat('Send failed ', convert(varchar(20),cast(@hr as varbinary(4)),1));
+        throw 60000, @errorMessage, 1;
+      end;
+
+      declare @status int
+      EXEC @hr=sp_OAGetProperty @win,'Status', @status out
+      IF @hr <> 0
+      begin;
+        set @errorMessage = concat('get Status failed ', convert(varchar(20),cast(@hr as varbinary(4)),1));
+        throw 60000, @errorMessage, 1;
+      end;
+
+      if @status <> 200
+      begin;
+        set @errorMessage = concat('web request failed ', @status);
+        throw 60000, @errorMessage, 1;
+      end;
+
+      declare @response table(text nvarchar(max));
+
+      insert into @response(text)
+      EXEC @hr=sp_OAGetProperty @win,'ResponseText';
+      IF @hr <> 0
+      begin;
+        set @errorMessage = concat('get ResponseText failed ', convert(varchar(20),cast(@hr as varbinary(4)),1));
+        throw 60000, @errorMessage, 1;
+      end;
+
+	        select  @output= [text]
+
+      from @response
+
+
+      EXEC @hr=sp_OADestroy @win 
+      IF @hr <> 0 EXEC sp_OAGetErrorInfo @win;
+
+    end try
+    begin catch
+      declare @error varchar(200) = error_message()
+      declare @source varchar(200);
+      declare @description varchar(200);
+      declare @helpfile varchar(200);
+      declare @helpid int;
+
+      exec sp_OAGetErrorInfo @win, @source out, @description out, @helpfile out, @helpid out;
+      declare @msg varchar(max) = concat('COM Failure ', @error,' ',@source,' ',@description)
+
+      EXEC @hr=sp_OADestroy @win; 
+      --IF @hr <> 0 EXEC sp_OAGetErrorInfo @win;
+      throw 60000, @msg, 1;
+
+            RETURN;
+    end catch
+end
+go
+
 
 declare @output  VARCHAR(MAX)
 declare @baseurl VARCHAR(MAX) = 'https://catalog.data.gov/api/3/action/package_search?facet.field='
@@ -161,3 +271,48 @@ t
 cross apply openjson(isnull(r.tracking_summary,'{}'),'$')
 with(total nvarchar(max) '$.total'
 ,recent nvarchar(max) '$.recent') t2
+
+
+
+
+DECLARE @JSONData varchar(max)
+
+exec dbo.get_http 'http://us-city.census.okfn.org/api/entries.json'
+
+,@JSONData output 
+
+
+
+SELECT 
+*
+from OPENJSON(@JSONData, '$.results')
+with(
+id						nVARCHAR(4000)					'$.id'
+,[site]					nVARCHAR(4000)					'$.site'
+,[timestamp]				nVARCHAR(4000)				'$.timestamp'
+,[year]					nVARCHAR(4000)					'$.year'
+,place					nVARCHAR(4000)					'$.place'
+,dataset				nVARCHAR(4000)					'$.dataset'
+,[exists]					nVARCHAR(4000)				'$.exists'
+,digital				nVARCHAR(4000)					'$.digital'
+,[public]					nVARCHAR(4000)				'$.public'
+,[online]					nVARCHAR(4000)				'$.online'
+,free					nVARCHAR(4000)					'$.free'
+,machinereadable		nVARCHAR(4000)					'$.machinereadable'
+,[bulk]					nVARCHAR(4000)					'$.bulk'
+,openlicense			nVARCHAR(4000)					'$.openlicense'
+,uptodate				nVARCHAR(4000)					'$.uptodate'
+,[url]					nVARCHAR(4000)					'$.url'
+,[format]					nVARCHAR(4000)				'$.format'
+,licenseurl				nVARCHAR(4000)					'$.licenseurl'
+,officialtitle			nVARCHAR(4000)					'$.officialtitle'
+,publisher				nVARCHAR(4000)					'$.publisher'
+,reviewed				nVARCHAR(4000)					'$.reviewed'
+,reviewResult			nVARCHAR(4000)					'$.reviewResult'
+,reviewComments			nVARCHAR(4000)					'$.reviewComments'
+,details				nVARCHAR(4000)					'$.details'
+,isCurrent				nVARCHAR(4000)					'$.isCurrent'
+,isOpen					nVARCHAR(4000)					'$.isOpen'
+,submitter				nVARCHAR(4000)					'$.submitter'
+,reviewer				nVARCHAR(4000)					'$.reviewer'
+,score					nVARCHAR(4000)					'$.score')
